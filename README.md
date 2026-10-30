@@ -4,7 +4,6 @@
 
 To design and implement a **Water Level Indicator using STM32 Nucleo-L031K6** that measures the water level using an analog input and displays the water level as **LOW, MEDIUM, or HIGH** on the Wokwi Serial Monitor.
 
----
 
 ## Components Required
 
@@ -14,7 +13,6 @@ To design and implement a **Water Level Indicator using STM32 Nucleo-L031K6** th
 - Virtual Serial Monitor
 - Connecting wires
 
----
 
 ## Theory
 
@@ -37,7 +35,6 @@ The ADC value is converted into a percentage, and the water level is classified 
 
 The water-level information is displayed on the **Wokwi Serial Monitor** using UART communication.
 
----
 
 ## Pin Configuration
 
@@ -49,7 +46,6 @@ The water-level information is displayed on the **Wokwi Serial Monitor** using U
 | USART2 TX | PA2 | Serial data transmission |
 | USART2 RX | PA15 | Serial data reception |
 
----
 
 ## Block Diagram
 
@@ -80,7 +76,6 @@ The water-level information is displayed on the **Wokwi Serial Monitor** using U
    Water Level Display
 ~~~
 
----
 
 ## Water Level Classification
 
@@ -90,7 +85,6 @@ The water-level information is displayed on the **Wokwi Serial Monitor** using U
 | Medium | 31–70% | MEDIUM |
 | High | 71–100% | HIGH |
 
----
 
 ## Algorithm
 
@@ -110,12 +104,229 @@ The water-level information is displayed on the **Wokwi Serial Monitor** using U
 14. Wait for one second.
 15. Repeat continuously.
 
----
 
 ## Program
+```
+#include <stm32l0xx_hal.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 
+/* Peripheral handles */
+ADC_HandleTypeDef hadc;
+UART_HandleTypeDef huart2;
+
+/* Function prototypes */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_ADC_Init(void);
+static void MX_USART2_UART_Init(void);
+void Error_Handler(void);
+
+/* Redirect printf() to UART */
+int _write(int file, char *ptr, int len)
+{
+    (void)file;
+    HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, HAL_MAX_DELAY);
+    return len;
+}
+
+/* Required by the Wokwi STM32 HAL environment */
+void osSystickHandler(void)
+{
+}
+
+int main(void)
+{
+    uint32_t adc_value;
+    uint32_t water_level;
+    const char *status;
+
+    HAL_Init();
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_USART2_UART_Init();
+    MX_ADC_Init();
+
+    printf("\r\nWater Level Indicator Started\r\n");
+
+    while (1)
+    {
+        /* Read analog input from PA0 */
+        if (HAL_ADC_Start(&hadc) == HAL_OK)
+        {
+            if (HAL_ADC_PollForConversion(&hadc, 100) == HAL_OK)
+            {
+                adc_value = HAL_ADC_GetValue(&hadc);
+
+                /* Convert ADC reading to percentage */
+                water_level = (adc_value * 100U) / 4095U;
+
+                /* Classify water level */
+                if (water_level <= 30U)
+                {
+                    status = "LOW";
+                }
+                else if (water_level <= 70U)
+                {
+                    status = "MEDIUM";
+                }
+                else
+                {
+                    status = "HIGH";
+                }
+
+                /* Display result on Serial Monitor */
+                printf("ADC Value: %lu\r\n",
+                       (unsigned long)adc_value);
+
+                printf("Water Level: %lu%%\r\n",
+                       (unsigned long)water_level);
+
+                printf("Status: %s\r\n\r\n", status);
+            }
+
+            HAL_ADC_Stop(&hadc);
+        }
+
+        HAL_Delay(1000);
+    }
+}
+
+/* ADC configuration */
+static void MX_ADC_Init(void)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_ADC1_CLK_ENABLE();
+
+    /* Configure PA0 as analog input */
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    hadc.Instance = ADC1;
+    hadc.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+    hadc.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
+    hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+    hadc.Init.LowPowerAutoWait = DISABLE;
+    hadc.Init.LowPowerFrequencyMode = DISABLE;
+    hadc.Init.LowPowerAutoPowerOff = DISABLE;
+    hadc.Init.ContinuousConvMode = DISABLE;
+    hadc.Init.DiscontinuousConvMode = DISABLE;
+    hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+    hadc.Init.DMAContinuousRequests = DISABLE;
+    hadc.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
+
+    if (HAL_ADC_Init(&hadc) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    sConfig.Channel = ADC_CHANNEL_0;
+    sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
+
+    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+/* USART2 configuration */
+static void MX_USART2_UART_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_USART2_CLK_ENABLE();
+
+    /* PA2 = USART2 TX; PA15 = USART2 RX */
+    GPIO_InitStruct.Pin = GPIO_PIN_2 | GPIO_PIN_15;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF4_USART2;
+
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    huart2.Instance = USART2;
+    huart2.Init.BaudRate = 115200;
+    huart2.Init.WordLength = UART_WORDLENGTH_8B;
+    huart2.Init.StopBits = UART_STOPBITS_1;
+    huart2.Init.Parity = UART_PARITY_NONE;
+    huart2.Init.Mode = UART_MODE_TX_RX;
+    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+    huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+    huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+
+    if (HAL_UART_Init(&huart2) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+/* GPIO configuration */
+static void MX_GPIO_Init(void)
+{
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+}
+
+/* System clock configuration */
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI;
+    RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+    RCC_OscInitStruct.MSICalibrationValue = 0;
+    RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_5;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    RCC_ClkInitStruct.ClockType =
+        RCC_CLOCKTYPE_HCLK |
+        RCC_CLOCKTYPE_SYSCLK |
+        RCC_CLOCKTYPE_PCLK1;
+
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct,
+                            FLASH_LATENCY_0) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+/* Error handler */
+void Error_Handler(void)
+{
+    __disable_irq();
+
+    while (1)
+    {
+    }
+}
+```
 
 ## Circuit Connections
+<img width="346" height="510" alt="image" src="https://github.com/user-attachments/assets/06157d2a-cb74-4d41-9156-9348baf9e5ff" />
 
 ### Potentiometer
 
@@ -201,7 +412,6 @@ Water Level: 85%
 Status: HIGH
 ~~~
 
----
 
 ## Working
 
@@ -221,10 +431,11 @@ The STM32 then classifies the water level as:
 
 The ADC value, percentage, and water-level status are transmitted through **USART2** and displayed on the **Wokwi Serial Monitor**.
 
----
+
+## OUTPUT
+<img width="1920" height="1200" alt="image" src="https://github.com/user-attachments/assets/5d719df4-f2c6-41f7-904c-c4fbc20b5a4a" />
+
 
 ## Result
 
 Thus, the **Water Level Indicator using STM32 Nucleo-L031K6** was designed and implemented successfully. The water level was measured using the ADC and displayed as **LOW, MEDIUM, or HIGH** on the Wokwi Serial Monitor.
-**OUTPUT **
-<img width="1535" height="863" alt="image" src="https://github.com/user-attachments/assets/f230110e-2f4c-4324-8529-c7c3c9f4e86f" />
